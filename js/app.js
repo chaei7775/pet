@@ -58,12 +58,18 @@ const bar = (label, v, cls) => `<div class="bar"><span>${label}</span><div class
 const dogOf = (pet, p) => Art.dog({ color: pet.color, equipped: pet.equipped, sick: pet.sick, pose: p || 'basic' });
 
 /* ───────── 시작 화면 ───────── */
+const joinCode = () => Game.normCode(new URLSearchParams(location.search).get('join') || '');
+function clearJoin() { try { history.replaceState(null, '', location.pathname); } catch (e) {} }
+async function autoJoin() { // 초대 링크로 들어왔으면 시작 직후 그 방에 들어감 (한 번만)
+  const code = joinCode(); if (!code || !Backend.view) return; clearJoin();
+  const r = await Backend.act('joinRoom', { code }); toast(r.ok ? '친구방에 들어왔어' : r.msg, !r.ok); if (r.ok) tab = 'room';
+}
 function renderStart() {
-  const join = new URLSearchParams(location.search).get('join') || '';
+  const join = joinCode();
   $('#app').innerHTML = `<div class="start">
     <div class="logo">${Art.dog({ color: 'cream', pose: 'playing' })}</div>
     <h1>말랑 친구방 펫</h1><p class="sub">내 강아지를 키우고, 꾸미고, 친구에게 자랑해요</p>
-    ${join ? `<p class="note">친구가 초대했어요. 시작한 뒤 친구방 탭에서 방 코드를 넣어주세요.</p>` : ''}
+    ${join ? `<p class="note">친구가 초대했어요! 시작하면 친구방에 바로 들어가요.</p>` : ''}
     <label>내 닉네임<input id="nick" maxlength="8" placeholder="예: 채이"></label>
     <label>강아지 이름<input id="pname" maxlength="8" placeholder="예: 몽이"></label>
     <div class="age"><span>나이 구분</span><label><input type="radio" name="age" value="kid">만 14세 미만</label><label><input type="radio" name="age" value="teen">만 14세 이상</label></div>
@@ -303,7 +309,7 @@ function viewRoom() {
   <h3>친구 부르기 <small>선택</small></h3>
   <p class="muted">링크는 시작 화면까지만 연결돼요. 방 코드는 따로 알려주세요.</p>
   <div class="row"><span>방 코드 <b class="code">${r.code}</b></span><button data-act="copyCode" data-p='"${r.code}"'>복사</button></div>
-  <button data-act="shareInvite">📤 게임 링크 공유</button>
+  <button data-act="shareInvite" data-p='"${r.code}"'>📤 초대 링크 공유</button>
   <details class="recover"><summary>🔑 내 정보 · 복구 코드</summary><p class="muted">다른 기기에서 이어 하려면 이 코드가 필요해요. 남에게 알려주지 마세요.</p><div class="row"><b class="code">${esc(V.player.recovery)}</b><button data-act="copyCode" data-p='${JSON.stringify(V.player.recovery)}'>복사</button></div></details>
   ${Backend.mode !== 'local' ? '' : `<details class="dev" ${devOpen ? 'open' : ''}><summary>🛠 개발용 (테스트 전용)</summary>
     <p class="muted">서버 연결 전이라 다른 사람이 없어요. 아래로 테스트 친구를 만들어 기능을 확인해요.</p>
@@ -343,7 +349,7 @@ document.addEventListener('click', async e => {
       if (!nick || !pn) return toast('닉네임과 강아지 이름을 써줘', true);
       if (!age) return toast('나이 구분을 골라줘', true);
       if (busy) return; busy = true;
-      try { const r = await Backend.create(nick, pn, col, age); if (!r.ok) toast(r.msg, true); } finally { busy = false; }
+      try { const r = await Backend.create(nick, pn, col, age); if (!r.ok) toast(r.msg, true); else await autoJoin(); } finally { busy = false; }
       return render(); }
     case 'recover': { if (busy) return; busy = true;
       try { const r = await Backend.recover(val('#recCode')); if (!r.ok) toast(r.msg, true); } finally { busy = false; }
@@ -371,8 +377,8 @@ document.addEventListener('click', async e => {
     case 'savePhoto': return download(photo.url, 'malang-pet');
     case 'sharePhoto': return share(photo.url, 'malang-pet');
     case 'copyCode': try { await navigator.clipboard.writeText(p); toast('방 코드를 복사했어'); } catch (err) { toast('방 코드: ' + p); } return;
-    case 'shareInvite': { const url = location.origin + location.pathname; // 링크는 시작 화면까지만, 방 코드 미포함
-      if (navigator.share) { try { await navigator.share({ title: '말랑 친구방 펫', text: '같이 키워요!', url }); } catch (err) {} }
+    case 'shareInvite': { const url = location.origin + location.pathname + '?join=' + encodeURIComponent(p); // 링크에 방 코드가 들어 있어: 받은 사람은 시작하면 바로 그 방에 들어옴
+      if (navigator.share) { try { await navigator.share({ title: '말랑 친구방 펫', text: '내 방에 놀러 와! 같이 키워요', url }); } catch (err) {} }
       else { try { await navigator.clipboard.writeText(url); toast('링크를 복사했어'); } catch (err) { toast(url); } } return; }
     case 'walk': return act('walk', p);
     case 'devSkip': Backend.devSkip(p); await Backend.sync(); toast('시간을 건너뛰었어'); return render();
@@ -385,7 +391,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id
 document.addEventListener('toggle', e => { if (e.target.matches && e.target.matches('details.dev')) devOpen = e.target.open; }, true);
 (async function init() {
   render(); // 먼저 빈 화면 방지
-  if (Backend.hasPlayer()) { await Backend.sync(); if (!Backend.view) toast('계정을 불러오지 못했어. 새로 시작하거나 복구 코드를 써줘', true); }
+  if (Backend.hasPlayer()) { await Backend.sync(); if (!Backend.view) toast('계정을 불러오지 못했어. 새로 시작하거나 복구 코드를 써줘', true); else await autoJoin(); }
   render();
   let tick = 0;
   setInterval(async () => {
