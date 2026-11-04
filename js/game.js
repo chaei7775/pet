@@ -18,6 +18,8 @@ const DATA = {
     walkGiveMax: 3, walkRecvMax: 2, walkCoin: 20, walkHearts: 1, walkMood: 30,
     giftMax: 5, heartMax: 10,
     loginGift: 90, careBonus: 30, nameMax: 8, renameMaxDaily: 2, // 이름은 1~8자, 하루 2번까지 바꿀 수 있어 [내가 정함]
+    // 목욕·양치: 며칠에 한 번 하는 긴 주기 돌봄. 돌봄 완료(30🪙) 조건에는 안 들어가고, 안 해도 불이익 없음 [내가 정함 — 숫자는 여기서만 바꾸면 돼]
+    bathEveryH: 72, bathMood: 15, brushEveryH: 48, brushMood: 10, shineH: 24,
    
     feedHours: 24, feedMax: 50,
     roomPhotoNeed: 3, roomPhotoWindowH: 24, roomMin: 3, roomMax: 10, maxRooms: 5, // maxRooms: [내가 정함] 한 사람이 들어갈 수 있는 방 수
@@ -82,7 +84,8 @@ const Game = (() => {
   function newPet(name, color, seed, now) {
     return { id: seed, name, color, species: 'dog', taste: makeTaste(seed),
       base: { t: now, hunger: C.hungerStart, toilet: 0, mood: C.moodStart },
-      sick: null, lastRollDay: dayKey(now), equipped: { head: null, neck: null, body: null } };
+      sick: null, lastRollDay: dayKey(now), equipped: { head: null, neck: null, body: null },
+      lastBath: null, lastBrush: null, shineUntil: 0 };
   }
   function newDaily(now) {
     return { day: dayKey(now), plays: 0, jobs: 0, walksGiven: 0, walksReceived: 0, gifts: 0, hearts: 0,
@@ -109,6 +112,12 @@ const Game = (() => {
       sick: !!pet.sick
     };
   }
+  // 목욕·양치: 주기가 지났는지(ready), 남은 시간(leftH), 할 때가 됐다는 표시(due: 한 번 한 뒤 주기가 지난 경우), 반짝 중인지(shine)
+  function careStatus(pet, now) {
+    const one = (last, every) => { const left = last == null ? 0 : Math.max(0, (last + every * H - now) / H); return { ready: left <= 0, leftH: left, due: last != null && left <= 0 }; };
+    return { bath: one(pet.lastBath, C.bathEveryH), brush: one(pet.lastBrush, C.brushEveryH), shine: (pet.shineUntil || 0) > now };
+  }
+  const waitText = h => h >= 24 ? `${Math.ceil(h / 24)}일` : `${Math.max(1, Math.ceil(h))}시간`;
   function commit(pet, now) { const s = stats(pet, now); pet.base = { t: now, hunger: s.hunger, toilet: s.toilet, mood: s.mood }; }
 
   // 시간이 흘러서 생기는 일(하루 바뀜, 아픔 굴리기, 회복)을 반영
@@ -178,6 +187,16 @@ const Game = (() => {
       if (s.daily.plays >= C.playMax) return fail(`놀아주기는 하루 ${C.playMax}번까지야`);
       s.daily.plays++; s.pet.base.mood = clamp(s.pet.base.mood + C.playGain, 0, 100);
       s.daily.care.played = true; return done(s, `신나게 놀았어! 기분 +${C.playGain} (${s.daily.plays}/${C.playMax})` + careCheck(s));
+    },
+    bath(s, p, now) {
+      const c = careStatus(s.pet, now).bath; if (!c.ready) return fail(`목욕은 ${C.bathEveryH / 24}일에 한 번이야. ${waitText(c.leftH)} 뒤에 또 할 수 있어`);
+      s.pet.lastBath = now; s.pet.shineUntil = now + C.shineH * H; s.pet.base.mood = clamp(s.pet.base.mood + C.bathMood, 0, 100);
+      return done(s, `뽀득뽀득! 반짝반짝해졌어 ✨ 기분 +${C.bathMood}`);
+    },
+    brush(s, p, now) {
+      const c = careStatus(s.pet, now).brush; if (!c.ready) return fail(`양치는 ${C.brushEveryH / 24}일에 한 번이야. ${waitText(c.leftH)} 뒤에 또 할 수 있어`);
+      s.pet.lastBrush = now; s.pet.shineUntil = now + C.shineH * H; s.pet.base.mood = clamp(s.pet.base.mood + C.brushMood, 0, 100);
+      return done(s, `치카치카! 이가 반짝반짝 ✨ 기분 +${C.brushMood}`);
     },
     buyIngredient(s, p) {
       const i = ing(p.id); if (!i) return fail('없는 재료야');
@@ -389,10 +408,10 @@ const Game = (() => {
       r.members = r.members.map(m => { const P = players[m.id];
         if (!P) return { id: m.id, nick: m.nick, me: m.id === me.player.id, pet: null };
         const st = stats(P.pet, now);
-        return { id: m.id, nick: m.nick, me: m.id === me.player.id, pet: { name: P.pet.name, color: P.pet.color, equipped: P.pet.equipped, sick: st.sick, mood: st.mood } }; });
+        return { id: m.id, nick: m.nick, me: m.id === me.player.id, pet: { name: P.pet.name, color: P.pet.color, equipped: P.pet.equipped, sick: st.sick, mood: st.mood, shine: careStatus(P.pet, now).shine } }; });
       return r; });
     return { me, rooms };
   }
 
-  return { act, view, settled, settleRoom, stats, newState, dayKey, snackName, snackKey, snackMoodFor, ing, cloth, normCode, nameKey };
+  return { act, view, settled, settleRoom, stats, careStatus, newState, dayKey, snackName, snackKey, snackMoodFor, ing, cloth, normCode, nameKey };
 })();

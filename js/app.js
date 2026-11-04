@@ -1,7 +1,7 @@
 /* 화면 */
 const $ = s => document.querySelector(s);
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-let S = null, V = null, tab = 'pet', pose = 'basic', poseTimer = null, curRoom = null;
+let S = null, V = null, tab = 'pet', pose = 'basic', poseTimer = null, curRoom = null, care = null; // care: 목욕·양치 하는 중 {kind, p(진행 0~100), foam[]}
 let devOpen = false;
 const devReset = { armed: false };
 let photo = { bg: 'showroom', pose: 'basic', url: null, title: '' };
@@ -54,7 +54,7 @@ async function act(type, p, poseTo) {
 }
 
 const bar = (label, v, cls) => `<div class="bar"><span>${label}</span><div class="track"><i class="${cls}" style="width:${Math.round(v)}%"></i></div><b>${Math.round(v)}</b></div>`;
-const dogOf = (pet, p) => Art.dog({ color: pet.color, equipped: pet.equipped, sick: pet.sick, pose: p || 'basic' });
+const dogOf = (pet, p) => Art.dog({ color: pet.color, equipped: pet.equipped, sick: pet.sick, pose: p || 'basic', shine: pet.shine != null ? pet.shine : (pet.shineUntil || 0) > Backend.now() });
 
 /* ───────── 시작 화면 ───────── */
 const joinCode = () => Game.normCode(new URLSearchParams(location.search).get('join') || '');
@@ -92,12 +92,16 @@ function render() {
 function viewPet() {
   const now = Backend.now(), st = Game.stats(V.pet, now), d = V.daily, c = d.care, cfg = DATA.cfg;
   const g = (ic, v, cls) => `<div class="gauge"><span>${ic}</span><div class="track"><i class="${cls}" style="width:${Math.round(v)}%"></i></div><b>${Math.round(v)}</b></div>`;
-  const bubbles = [st.sick ? '🤒' : '', st.hunger < 50 ? '🍗' : '', st.toilet >= 50 ? '💩' : '', st.mood < 50 ? '🥺' : ''].filter(Boolean).slice(0, 3);
+  const cs = Game.careStatus(V.pet, now);
+  const bubbles = [st.sick ? '🤒' : '', st.hunger < 50 ? '🍗' : '', st.toilet >= 50 ? '💩' : '', st.mood < 50 ? '🥺' : '', cs.bath.due ? '🫧' : '', cs.brush.due ? '🦷' : ''].filter(Boolean).slice(0, 3);
   const poop = st.toilet >= 75 ? 3 : st.toilet >= 50 ? 2 : st.toilet >= 25 ? 1 : 0;
   const snacks = Object.entries(V.inventory.snacks).filter(([, n]) => n > 0);
   const tool = (icon, label, spec) => `<div class="tool" data-tool='${JSON.stringify(spec)}' data-icon="${icon}"><span>${icon}</span><small>${label}</small></div>`;
+  const wait = h => h >= 24 ? Math.ceil(h / 24) + '일' : Math.ceil(h) + '시간';
+  const careTool = (icon, name, c, kind) => tool(icon, c.ready ? name : `${name} ${wait(c.leftH)} 뒤`, { fn: 'startCare', p: kind }).replace('class="tool"', `class="tool ${c.due ? 'due' : ''} ${c.ready ? '' : 'wait'}"`);
   const dock = [tool('🍚', `밥 −${cfg.foodCost}🪙`, { act: 'feed', pose: 'eating' }),
     tool('🎾', `공 ${d.plays}/${cfg.playMax}`, { act: 'play', pose: 'playing' }),
+    careTool('🧽', '목욕', cs.bath, 'bath'), careTool('🪥', '양치', cs.brush, 'brush'),
     ...snacks.slice(0, 3).map(([k, n]) => tool('🍪', `${esc(Game.snackName(k).replace(' 간식', ''))} ×${n}`, { act: 'giveSnack', p: { key: k }, pose: 'eating' })),
     ...(st.sick ? [tool('💊', `약 −${cfg.medMineCost}🪙`, { act: 'medicine' }), tool('🏥', `병원 −${cfg.hospitalCost}🪙`, { act: 'hospital' })] : [])].join('');
   const ck = (ok, t) => `<span class="${ok ? 'ok' : ''}">${ok ? '✔' : '○'} ${t}</span>`;
@@ -105,14 +109,45 @@ function viewPet() {
   <div class="room" style="background-image:url('${svgUrl(Art.bgSVG('showroom'))}')">
     <div class="hud">${g('🍗', st.hunger, 'hg')}${g('🧻', st.toilet, 'tl')}${g('💗', st.mood, 'md')}</div>
     <div class="pad ${poop ? 'dirty' : ''}" data-act="clean"><div class="padmat"></div><div class="poops">${'💩'.repeat(poop)}</div><small>${poop ? '눌러서 치우기' : '배변판'}</small></div>
-    <div class="dogwrap ${pose !== 'basic' || st.sick ? 'still' : ''}"><div id="dog" class="dog" data-act="petDog">${bubbles.length ? `<div class="bubbles">${bubbles.map(b => `<i>${b}</i>`).join('')}</div>` : ''}${dogOf(V.pet, pose)}</div></div>
-    <div class="dock">${dock}</div>
+    <div class="dogwrap ${pose !== 'basic' || st.sick || care ? 'still' : ''}"><div id="dog" class="dog" data-act="petDog">${bubbles.length ? `<div class="bubbles">${bubbles.map(b => `<i>${b}</i>`).join('')}</div>` : ''}${dogOf(V.pet, pose)}</div></div>
+    ${care ? careLayerHTML() : `<div class="dock">${dock}</div>`}
   </div>
   ${st.sick ? `<div class="sick">🤒 ${esc(V.pet.name)}가 아파요. 💊 약을 끌어다 주거나 🏥 병원에 데려가요.</div>` : ''}
   <div class="care"><b>오늘의 돌봄 +${cfg.careBonus}🪙(하루 1회)</b>${ck(c.fed, '밥')}${ck(c.cleaned, '배변판')}${ck(c.played, '놀이')}${d.careBonusClaimed ? '<span class="ok">🎉 받음</span>' : ''}</div>
   <p class="muted">밥그릇·공·간식을 강아지에게 끌어다 놓거나 눌러요. 강아지를 쓰다듬어 보세요.</p>`;
 }
 
+const careHint = () => care.kind === 'bath' ? (care.p < 100 ? '🧽 강아지를 쓱쓱 문질러줘' : '🫧 거품이 가득! 샤워기로 헹궈줘') : '🪥 입 쪽을 쓱쓱 문질러줘';
+function careLayerHTML() {
+  const foams = care.foam.map(f => `<i class="foam" style="left:${f.x}px;top:${f.y}px;--s:${f.s}px"></i>`).join('');
+  return `<div id="careLayer" class="careLayer ${care.rinsing ? 'rinsing' : ''}"><div class="carehint">${careHint()}</div><div class="cbar"><i style="width:${Math.round(care.p)}%"></i></div>${foams}
+    ${care.kind === 'bath' && care.p >= 100 && !care.rinsing ? '<button class="rinse" data-act="rinse">🚿 헹구기</button>' : ''}${care.rinsing ? '' : '<button class="ccancel" data-act="careCancel">그만하기</button>'}</div>`;
+}
+document.addEventListener('pointerdown', e => {   // 목욕·양치: 강아지 위를 문지르면 거품이 쌓여
+  const L = e.target.closest('#careLayer'); if (!L || !care || care.busy || care.rinsing || e.target.closest('button')) return; e.preventDefault();
+  let lx = e.clientX, ly = e.clientY, acc = 0;
+  const mv = ev => {
+    const dogEl = $('#dog'), room = $('.room'); if (!dogEl || !room || !care) return;
+    const r = dogEl.getBoundingClientRect(), rr = room.getBoundingClientRect();
+    const d = Math.hypot(ev.clientX - lx, ev.clientY - ly); lx = ev.clientX; ly = ev.clientY;
+    const inZone = care.kind === 'bath' ? (ev.clientX > r.left && ev.clientX < r.right && ev.clientY > r.top + r.height * .1 && ev.clientY < r.bottom)
+      : Math.hypot(ev.clientX - (r.left + r.width * .49), ev.clientY - (r.top + r.height * .54)) < r.width * .2;
+    if (!inZone || (care.kind === 'bath' && care.p >= 100)) return;
+    care.p = Math.min(100, care.p + d / (care.kind === 'bath' ? 8 : 5)); acc += d;
+    if (acc > 16) { acc = 0; const f = { x: Math.round(ev.clientX - rr.left + (Math.random() - .5) * 18), y: Math.round(ev.clientY - rr.top + (Math.random() - .5) * 18), s: care.kind === 'bath' ? 18 + Math.round(Math.random() * 22) : 10 + Math.round(Math.random() * 10) };
+      care.foam.push(f); if (care.foam.length > 60) care.foam.shift();
+      const n = document.createElement('i'); n.className = 'foam'; n.style.cssText = `left:${f.x}px;top:${f.y}px;--s:${f.s}px`; L.appendChild(n); if (care.foam.length % 5 === 0) Sfx.play('pop'); }
+    const bar = L.querySelector('.cbar i'); if (bar) bar.style.width = Math.round(care.p) + '%';
+    if (care.p >= 100) { up(); finishScrub(); }
+  };
+  const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+  window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+});
+async function finishScrub() {
+  if (!care) return;
+  if (care.kind === 'bath') { Sfx.play('ok'); return render(); }       // 거품 다 냈으면 헹구기 버튼이 나옴
+  care.busy = true; await act('brush', {}, 'playing'); care = null; render();
+}
 function petFx(el, e) {
   const sc = $('.room'); if (!sc) return; const r = sc.getBoundingClientRect();
   ['💗', '✨', '💖'].forEach((h, i) => { const n = document.createElement('i'); n.className = 'fx'; n.textContent = h;
@@ -123,6 +158,11 @@ const hit = (ev, el) => { const r = el.getBoundingClientRect(); return ev.client
 const potSVG = '<svg viewBox="0 0 200 120" class="potsvg"><ellipse cx="100" cy="100" rx="70" ry="12" fill="#00000018"/><path d="M40 50 h120 v26 a50 30 0 0 1 -50 30 h-20 a50 30 0 0 1 -50 -30 z" fill="#f4a9a8" stroke="#7a5a44" stroke-width="4" stroke-linejoin="round"/><ellipse cx="100" cy="50" rx="60" ry="14" fill="#ffd3d2" stroke="#7a5a44" stroke-width="4"/><path d="M34 62 q-16 4 -6 16 M166 62 q16 4 6 16" fill="none" stroke="#7a5a44" stroke-width="5" stroke-linecap="round"/></svg>';
 const fns = {
   noop() { toast('눌러서 먼저 사줘', true); },
+  startCare(kind) {
+    const c = Game.careStatus(V.pet, Backend.now())[kind];
+    if (!c.ready) { Sfx.play('bad'); return toast(`${kind === 'bath' ? '목욕' : '양치'}은 ${c.leftH >= 24 ? Math.ceil(c.leftH / 24) + '일' : Math.ceil(c.leftH) + '시간'} 뒤에 또 할 수 있어`, true); }
+    care = { kind, p: 0, foam: [] }; Sfx.play('pet'); render();
+  },
   async addPot(id) {
     const n = V.inventory.ingredients[id] || 0, used = pot.filter(x => x === id).length;
     if (n - used <= 0) { Sfx.play('bad'); return toast('재료가 없어. 눌러서 사줘', true); }
@@ -369,6 +409,9 @@ document.addEventListener('click', async e => {
     case 'recover': { if (busy) return; busy = true;
       try { const r = await Backend.recover(val('#recCode')); if (!r.ok) toast(r.msg, true); } finally { busy = false; }
       return render(); }
+    case 'careCancel': care = null; return render();
+    case 'rinse': { if (!care || busy) return; care.rinsing = true; render(); Sfx.play('pop'); await new Promise(r => setTimeout(r, 900));
+      await act('bath', {}, 'playing'); care = null; return render(); }
     case 'rename': return act('rename', { nickname: val('#rnNick'), petName: val('#rnPet') });
     case 'sfx': Sfx.toggle(); return render();
     case 'pick': pick = pick === p ? null : p; return render();

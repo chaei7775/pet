@@ -42,7 +42,7 @@ const Art = (() => {
    * color: 견종 이름(maltese/bichon/pomeranian/poodle) — 예전 색 이름(cream 등)도 받아줘.
    * pose: basic | eating | playing | sick | walking
    * still: true면 움직이는 그림 대신 한 장만 (사진·캔버스용)   inline: true면 이미지를 data URI로 넣음 (캔버스용) */
-  function dog({ color = 'maltese', pose = 'basic', equipped = {}, sick = false, still = false, inline = false } = {}) {
+  function dog({ color = 'maltese', pose = 'basic', equipped = {}, sick = false, still = false, inline = false, shine = false } = {}) {
     const b = breedOf(color), B = BREEDS[b];
     if (sick) pose = 'sick';
     const src = u => (inline && cache[u]) || u;
@@ -64,7 +64,9 @@ const Art = (() => {
     const dy = B.dy, hs = dy.hs || 1;   // 머리 옷은 모자 밑면(y 62)을 기준으로 크기를 줄여서(푸들) 정수리 뭉치 위에 얹음
     const put = (slot) => equipped[slot] ? `<g transform="translate(-2.25 ${dy[slot]})${slot === 'head' && hs !== 1 ? ` translate(100 62) scale(${hs}) translate(-100 -62)` : ''}">${clothes[equipped[slot]]()}</g>` : '';
     const sway = pose === 'playing' ? 'class="bounce"' : '';
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><g ${sway}>${art}${put('body')}${put('neck')}${put('head')}${extra}</g></svg>`;
+    // 목욕·양치 뒤 반짝 표시 (임시 코드 그림)
+    const sp = shine ? [[26, 58], [176, 66], [150, 24], [34, 128], [172, 138]].map(([x, y], i) => `<g transform="translate(${x} ${y})"><path class="tw" style="animation-delay:${i * 0.25}s" d="M0-7 2-2 7 0 2 2 0 7-2 2-7 0-2-2Z" fill="#fff6a8" stroke="#f5c542" stroke-width="1" stroke-linejoin="round"/></g>`).join('') : '';
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><g ${sway}>${art}${put('body')}${put('neck')}${put('head')}${extra}</g>${sp}</svg>`;
   }
 
   const BG = {
