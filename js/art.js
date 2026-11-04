@@ -5,19 +5,20 @@ const Art = (() => {
   /* 견종 표: n = 놀기 프레임 수, sick = 아픈 그림이 있는지,
    * dy = 옷이 앉는 높이 보정(머리/목/몸), ice = 아픈 그림이 없는 견종의 얼음주머니 자리 */
   const BREEDS = {
-    maltese:    { n: 6, sick: true, dy: { head: -10, neck: 0, body: 0 } },
+    maltese:    { n: 6, sick: true, walk: 4, dy: { head: -10, neck: 0, body: 0 } },
     bichon:     { n: 6, dy: { head: -10, neck: 0, body: 0 }, ice: [97.75, 34] },
     pomeranian: { n: 6, dy: { head: -10, neck: 2, body: 4 }, ice: [97.75, 43] },
     poodle:     { n: 5, dy: { head: -22, neck: 0, body: 2, hs: 0.72 }, ice: [97.75, 17] }
   };
   const LEGACY = { cream: 'maltese', choco: 'poodle', apricot: 'pomeranian' }; // 예전 색 이름으로 저장된 펫 호환
   const breedOf = id => BREEDS[id] ? id : (LEGACY[id] || 'maltese');
-  const PLAY_MS = 180;                                 // 놀기 그림 한 장이 보이는 시간
+  const PLAY_MS = 180, WALK_MS = 210;                                 // 놀기 그림 한 장이 보이는 시간
   const url = (b, k) => `assets/dogs/${b}_${k}.webp`;
   const cache = {};                                    // 캔버스(사진 저장)용: 주소 → data URI
   async function ready() {
     const urls = []; for (const b in BREEDS) { for (let i = 1; i <= BREEDS[b].n; i++) urls.push(url(b, i)); }
     urls.push(url('maltese', 'sick'));
+    for (let i = 1; i <= BREEDS.maltese.walk; i++) urls.push(url('maltese', 'walk_' + i));
     await Promise.all(urls.filter(u => !cache[u]).map(async u => {
       try { const blob = await (await fetch(u)).blob();
         cache[u] = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(blob); });
@@ -50,6 +51,8 @@ const Art = (() => {
     let art, extra = '';
     if (pose === 'playing' && !still) {                // 놀기: 프레임을 번갈아 보여줌(CSS 애니메이션)
       art = Array.from({ length: B.n }, (_, i) => img(url(b, i + 1), `class="pf pa" style="animation-name:pf${B.n};animation-duration:${B.n * PLAY_MS}ms;animation-delay:${i * PLAY_MS}ms"`)).join('');
+    } else if (pose === 'walking' && B.walk) {          // 걷기: 서서 총총 걷는 그림 (지금은 말티즈만)
+      art = still ? img(url(b, 'walk_1')) : Array.from({ length: B.walk }, (_, i) => img(url(b, 'walk_' + (i + 1)), `class="pf pa" style="animation-name:pf${B.walk};animation-duration:${B.walk * WALK_MS}ms;animation-delay:${i * WALK_MS}ms"`)).join('');
     } else if (pose === 'sick' && B.sick) {
       art = img(url(b, 'sick'));
     } else {
@@ -61,7 +64,8 @@ const Art = (() => {
     else if (pose === 'walking') extra = `<path d="M158 150 q24 -6 30 -36" fill="none" stroke="#e86a6a" stroke-width="4" stroke-linecap="round"/>`;
     else if (pose === 'sick' && !B.sick) { const [ix, iy] = B.ice;   // 아픈 그림이 아직 없는 견종: 기본 그림 + 임시 얼음주머니
       extra = `<g ${st}><circle cx="${ix}" cy="${iy}" r="8.5" fill="#bfe3ff"/></g><g stroke="#fff" stroke-width="1.8" stroke-linecap="round"><path d="M${ix} ${iy - 5}V${iy + 5}M${ix - 4.3} ${iy - 2.5}L${ix + 4.3} ${iy + 2.5}M${ix - 4.3} ${iy + 2.5}L${ix + 4.3} ${iy - 2.5}"/></g>`; }
-    const dy = B.dy, hs = dy.hs || 1;   // 머리 옷은 모자 밑면(y 62)을 기준으로 크기를 줄여서(푸들) 정수리 뭉치 위에 얹음
+    const dy = { ...B.dy }, hs = dy.hs || 1;
+    if (pose === 'walking' && B.walk) { dy.body -= 5; }   // 서 있는 몸통은 앉은 몸통보다 낮고 짧아서 옷을 위로 올림   // 머리 옷은 모자 밑면(y 62)을 기준으로 크기를 줄여서(푸들) 정수리 뭉치 위에 얹음
     const put = (slot) => equipped[slot] ? `<g transform="translate(-2.25 ${dy[slot]})${slot === 'head' && hs !== 1 ? ` translate(100 62) scale(${hs}) translate(-100 -62)` : ''}">${clothes[equipped[slot]]()}</g>` : '';
     const sway = pose === 'playing' ? 'class="bounce"' : '';
     // 목욕·양치 뒤 반짝 표시 (임시 코드 그림)

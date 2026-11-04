@@ -129,6 +129,7 @@ button.small{padding:6px 10px;font-size:12px;margin-top:6px}
 /* 진짜 강아지 그림: 놀기 프레임 번갈아 보이기 */
 .pf{opacity:0}.pa{animation-timing-function:steps(1,end);animation-iteration-count:infinite;animation-fill-mode:none}
 @keyframes pf6{0%{opacity:1}16.66%,100%{opacity:0}}
+@keyframes pf4{0%{opacity:1}25%,100%{opacity:0}}
 @keyframes pf5{0%{opacity:1}20%,100%{opacity:0}}
 /* 목욕·양치 */
 .careLayer{position:absolute;inset:0;z-index:6;touch-action:none;cursor:grab;border-radius:inherit;overflow:hidden}
