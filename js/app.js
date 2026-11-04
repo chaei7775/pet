@@ -35,6 +35,7 @@ function gainFx(before) { // 코인·하트가 바뀌면 머리 위 칩에서 �
   if (dh > 0) { const [x, y] = pos(chips[1]); floatText('+' + dh + '❤', x, y + 20, 'up'); }
 }
 let pot = [], pick = null;
+let duo = { fid: null, a: { x: 32, y: 62, pose: 'basic' }, b: { x: 68, y: 62, pose: 'basic' }, url: null }, dragging = false;
 let busy = false;
 function refresh() { const v = Backend.view; V = v ? v.me : null; if (V) V.rooms = v.rooms; }
 function toast(msg, bad) {
@@ -182,9 +183,28 @@ function viewPhoto() {
   <h3>내 펫 사진</h3><div class="seg">${bgs}</div><div class="seg">${poses}</div>
   <button class="big" data-act="makePhoto">📸 사진 만들기</button>
   ${photo.url ? `<img class="result" src="${photo.url}"><div class="grid2"><button data-act="savePhoto">💾 저장</button><button data-act="sharePhoto">📤 공유</button></div>` : ''}
+  ${duoHTML()}
   <h3>방 기념사진</h3>${roomPhotos.length ? roomPhotos.map(({ r, p }) => `<div class="row"><span>${esc(r.name)} · ${new Date(p.t).toLocaleDateString()}</span><button data-act="makeRoomPhoto" data-p='{"code":"${r.code}","id":"${p.id}"}'>만들기</button></div>`).join('') : '<p class="muted">친구방에서 촬영 참여가 모이면 여기에 생겨요</p>'}`;
 }
 
+function friendsList() {
+  const seen = new Set(), out = [];
+  V.rooms.forEach(r => r.members.forEach(m => { if (!m.me && m.pet && !seen.has(m.id)) { seen.add(m.id); out.push({ id: m.id, nick: m.nick, pet: m.pet, room: r.name }); } }));
+  return out;
+}
+function duoHTML() {
+  const fr = friendsList(), f = fr.find(x => x.id === duo.fid);
+  const pickers = fr.length ? fr.map(x => `<button class="${duo.fid === x.id ? 'on' : ''}" data-act="duoPick" data-p='${JSON.stringify(x.id)}'>${esc(x.pet.name)}</button>`).join('') : '<small class="muted">친구방에 친구가 들어오면 같이 찍을 수 있어요</small>';
+  let stage = '';
+  if (f) {
+    const dd = (k, pet) => `<div class="dd" data-dd="${k}" style="left:${duo[k].x}%;top:${duo[k].y}%">${dogOf(pet, duo[k].pose)}<small>${esc(pet.name)}</small></div>`;
+    stage = `<div id="duoStage" class="duostage" style="background-image:url('${svgUrl(Art.bgSVG(photo.bg))}')">${dd('a', V.pet)}${dd('b', f.pet)}</div>
+    <p class="muted">강아지를 끌어서 자리를 잡고, 눌러서 포즈를 바꿔요. 배경은 위에서 골라요.</p>
+    <button class="big" data-act="makeDuo">📸 둘이 사진 찍기</button>
+    ${duo.url ? `<img class="result" src="${duo.url}"><div class="grid2"><button data-act="saveDuo">💾 저장</button><button data-act="shareDuo">📤 공유</button></div>` : ''}`;
+  }
+  return `<h3>친구랑 사진</h3><div class="seg">${pickers}</div>${stage}`;
+}
 function entries(room, ids) {
   return ids.map(id => { const m = room.members.find(x => x.id === id); if (!m) return null;
     return m.me ? { ...V.pet, nick: V.player.nickname } : { ...m.pet, nick: m.nick }; }).filter(Boolean);
@@ -206,6 +226,34 @@ async function compose(list, bg, title, ps) {
   g.font = '24px sans-serif'; g.fillText('말랑 친구방 펫 (임시 그림)', W / 2, Hh - 36);
   return cv.toDataURL('image/png');
 }
+async function composeDuo(items, bg, title) {
+  const W = 720, Hh = 960, cv = document.createElement('canvas'); cv.width = W; cv.height = Hh;
+  const g = cv.getContext('2d'); g.drawImage(await loadImg(svgUrl(Art.bgSVG(bg, W, Hh))), 0, 0, W, Hh);
+  const sz = 330;
+  for (const it of items.slice().sort((p, q) => p.y - q.y)) {
+    const cx = it.x / 100 * W, cy = it.y / 100 * Hh;
+    g.drawImage(await loadImg(svgUrl(Art.dog({ color: it.pet.color, equipped: it.pet.equipped, sick: false, pose: it.pose }))), cx - sz / 2, cy - sz / 2, sz, sz);
+    g.fillStyle = '#6b4a3a'; g.font = 'bold 26px sans-serif'; g.textAlign = 'center'; g.fillText(it.pet.name, cx, cy + sz / 2 + 4);
+  }
+  g.fillStyle = '#6b4a3a'; g.font = 'bold 44px sans-serif'; g.textAlign = 'center'; g.fillText(title, W / 2, 90);
+  g.font = '24px sans-serif'; g.fillText('말랑 친구방 펫 (임시 그림)', W / 2, Hh - 36);
+  return cv.toDataURL('image/png');
+}
+document.addEventListener('pointerdown', e => {
+  const el = e.target.closest('[data-dd]'); if (!el) return; e.preventDefault();
+  const stage = el.parentElement, k = el.dataset.dd, sx = e.clientX, sy = e.clientY; let moved = false; dragging = true;
+  const mv = ev => {
+    if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) > 6) moved = true;
+    if (!moved) return; const r = stage.getBoundingClientRect();
+    duo[k].x = Math.max(12, Math.min(88, (ev.clientX - r.left) / r.width * 100)); duo[k].y = Math.max(22, Math.min(80, (ev.clientY - r.top) / r.height * 100));
+    el.style.left = duo[k].x + '%'; el.style.top = duo[k].y + '%'; duo.url = null;
+  };
+  const up = () => {
+    window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); dragging = false;
+    if (!moved) { const o = ['basic', 'playing', 'walking']; duo[k].pose = o[(o.indexOf(duo[k].pose) + 1) % 3]; duo.url = null; Sfx.play('pet'); render(); }
+  };
+  window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+});
 async function share(url, name) {
   const blob = await (await fetch(url)).blob(), file = new File([blob], name + '.png', { type: 'image/png' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: '말랑 친구방 펫' }); return; } catch (e) { return; } }
@@ -310,7 +358,12 @@ document.addEventListener('click', async e => {
     case 'createRoom': return act('createRoom', { name: val('#roomName') });
     case 'joinRoom': return act('joinRoom', { code: val('#roomCode') });
     case 'gift': return act('giftSnack', { ...p, key: val('#giftKey') });
-    case 'photoBg': photo.bg = p; photo.url = null; return render();
+    case 'photoBg': photo.bg = p; photo.url = null; duo.url = null; return render();
+    case 'duoPick': duo.fid = p; duo.url = null; return render();
+    case 'makeDuo': { const f = friendsList().find(x => x.id === duo.fid); if (!f) return;
+      duo.url = await composeDuo([{ pet: V.pet, x: duo.a.x, y: duo.a.y, pose: duo.a.pose }, { pet: f.pet, x: duo.b.x, y: duo.b.y, pose: duo.b.pose }], photo.bg, V.pet.name + ' & ' + f.pet.name); return render(); }
+    case 'saveDuo': return download(duo.url, 'malang-duo');
+    case 'shareDuo': return share(duo.url, 'malang-duo');
     case 'photoPose': photo.pose = p; photo.url = null; return render();
     case 'makePhoto': photo.url = await compose([{ ...V.pet, nick: V.player.nickname }], photo.bg, V.pet.name, photo.pose); return render();
     case 'makeRoomPhoto': { const r = V.rooms.find(x => x.code === p.code), ph = r.photos.find(x => x.id === p.id);
@@ -336,7 +389,7 @@ document.addEventListener('toggle', e => { if (e.target.matches && e.target.matc
   render();
   let tick = 0;
   setInterval(async () => {
-    if (document.hidden || document.querySelector('.overlay') || busy || !Backend.hasPlayer()) return;
+    if (document.hidden || dragging || document.querySelector('.overlay') || busy || !Backend.hasPlayer()) return;
     tick++; const every = tab === 'room' ? 1 : 4; // 친구방을 보고 있을 때만 자주 가져옴 (8초), 아니면 32초
     if (tick % every) return;
     if (document.activeElement && document.activeElement.matches('input,select')) return;
