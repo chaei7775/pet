@@ -17,7 +17,8 @@ const DATA = {
     jobMin: 20, jobMax: 40, jobMaxDaily: 5,
     walkGiveMax: 3, walkRecvMax: 2, walkCoin: 20, walkHearts: 1, walkMood: 30,
     giftMax: 5, heartMax: 10,
-    loginGift: 90, careBonus: 30,
+    loginGift: 90, careBonus: 30, nameMax: 8, renameMaxDaily: 2, // 이름은 1~8자, 하루 2번까지 바꿀 수 있어 [내가 정함]
+   
     feedHours: 24, feedMax: 50,
     roomPhotoNeed: 3, roomPhotoWindowH: 24, roomMin: 3, roomMax: 10, maxRooms: 5, // maxRooms: [내가 정함] 한 사람이 들어갈 수 있는 방 수
     snackBaseMood: 5, likeMood: { 2: 10, 1: 5, 0: 0 } // 좋아함10 보통5 별로0 → 간식 기분 5~25
@@ -84,7 +85,7 @@ const Game = (() => {
   }
   function newDaily(now) {
     return { day: dayKey(now), plays: 0, jobs: 0, walksGiven: 0, walksReceived: 0, gifts: 0, hearts: 0,
-      loginClaimed: false, careBonusClaimed: false, care: { fed: false, cleaned: false, played: false } };
+      loginClaimed: false, renames: 0, careBonusClaimed: false, care: { fed: false, cleaned: false, played: false } };
   }
   function newState(now, nickname, petName, color, ageGroup, id) {
     id = id || 'p_' + rid() + rid();
@@ -141,6 +142,7 @@ const Game = (() => {
   function addFeed(room, now, text, who) { room.feed.push({ id: rid(), t: now, text, who, hearts: 0 }); }
   function snackMoodFor(taste, key) { return C.snackBaseMood + key.split('+').reduce((a, id) => a + C.likeMood[taste[id]], 0); }
 
+  const nameKey = x => String(x || '').toLowerCase().replace(/\s/g, '');
   const fail = msg => ({ ok: false, msg });
   const done = (s, msg) => ({ ok: true, msg, state: s });
   // 내가 들어가 있는 방인지 확인하고 방을 돌려줌
@@ -234,6 +236,17 @@ const Game = (() => {
       w.rooms[code] = room; s.roomCodes.push(code);
       addFeed(room, now, `${s.player.nickname}의 ${s.pet.name}가 방에 들어왔어`, s.player.id);
       return { ...done(s, `방 "${name}" 만들었어. 방 코드: ${code}`), newRoom: code };
+    },
+    rename(s, p, now, w) {
+      const nick = String(p.nickname == null ? s.player.nickname : p.nickname).trim(), pn = String(p.petName == null ? s.pet.name : p.petName).trim();
+      if (!nick || !pn) return fail('이름을 비워둘 수 없어');
+      if (nick.length > C.nameMax || pn.length > C.nameMax) return fail(`이름은 ${C.nameMax}자까지야`);
+      if (nick === s.player.nickname && pn === s.pet.name) return fail('바뀐 이름이 없어');
+      if (DATA.chat.banned.some(b => nameKey(nick + pn).includes(b))) return fail('쓸 수 없는 말이 들어 있어');
+      if ((s.daily.renames || 0) >= C.renameMaxDaily) return fail(`이름은 하루 ${C.renameMaxDaily}번까지 바꿀 수 있어`);
+      s.daily.renames = (s.daily.renames || 0) + 1; s.player.nickname = nick; s.pet.name = pn;
+      for (const code of s.roomCodes) { const r = w.rooms[code]; if (!r) continue; const m = r.members.find(x => x.id === s.player.id); if (m) m.nick = nick; }
+      return done(s, '이름을 바꿨어');
     },
     joinRoom(s, p, now, w) {
       const code = normCode(p.code), r = w.rooms[code];
@@ -380,5 +393,5 @@ const Game = (() => {
     return { me, rooms };
   }
 
-  return { act, view, settled, settleRoom, stats, newState, dayKey, snackName, snackKey, snackMoodFor, ing, cloth, normCode };
+  return { act, view, settled, settleRoom, stats, newState, dayKey, snackName, snackKey, snackMoodFor, ing, cloth, normCode, nameKey };
 })();

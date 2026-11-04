@@ -268,25 +268,40 @@ async function share(url, name) {
 function download(url, name) { const a = document.createElement('a'); a.href = url; a.download = name + '.png'; a.click(); }
 
 /* ───────── 친구방 ───────── */
+function renameHTML() {
+  const left = DATA.cfg.renameMaxDaily - (V.daily.renames || 0);
+  return `<details class="recover"><summary>✏️ 이름 바꾸기 (오늘 ${Math.max(0, left)}번 남음)</summary>
+  <p class="muted">닉네임은 다른 사람과 겹치면 안 돼요. 강아지 이름은 겹쳐도 되고, 같은 방에서는 ②③ 번호가 붙어요.</p>
+  <div class="cook"><input id="rnNick" maxlength="${DATA.cfg.nameMax}" value="${esc(V.player.nickname)}" placeholder="닉네임"><input id="rnPet" maxlength="${DATA.cfg.nameMax}" value="${esc(V.pet.name)}" placeholder="강아지 이름"><button data-act="rename">바꾸기</button></div></details>`;
+}
+const CIRC = ['', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+function petLabels(r) { // 같은 방에서 강아지 이름이 겹치면 들어온 순서대로 ②③…을 붙임
+  const seen = {}, out = {};
+  r.members.forEach(m => { const nm = (m.me ? V.pet : m.pet) ? (m.me ? V.pet.name : m.pet.name) : ''; if (!nm) return;
+    const k = Game.nameKey(nm); const n = seen[k] = (seen[k] || 0) + 1; out[m.id] = nm + (CIRC[n - 1] || ''); });
+  return out;
+}
 function roomSceneHTML(r, snacks) {
   const me = V.player.id, now = Backend.now(), mem = r.members.filter(m => m.pet), n = mem.length;
   const perRow = n <= 2 ? n : n <= 6 ? 3 : 4, rows = Math.ceil(n / perRow), w = perRow <= 1 ? 42 : perRow === 2 ? 34 : perRow === 3 ? 28 : 23;
+  const labels = petLabels(r);
   const dogs = mem.map((m, i) => {
     const row = Math.floor(i / perRow), cnt = Math.min(perRow, n - row * perRow), col = i % perRow;
     const x = (col + .5) / cnt * 100, y = 14 + (rows - 1 - row) * 19;
     const pet = m.me ? { ...V.pet, sick: Game.stats(V.pet, now).sick } : m.pet;
+    const lbl = labels[m.id] || pet.name;
     const last = r.chat.slice().reverse().find(c => c.from === m.id && now - c.t < 90000);
-    return `<div class="rdog ${pick === m.id ? 'sel' : ''} ${m.me ? 'me' : ''}" style="left:${x}%;bottom:${y}%;width:${w}%;--d:${(i * 0.7) % 3}s" data-act="pick" data-p='${JSON.stringify(m.id)}'>${last ? `<div class="say">${esc(last.text.slice(0, 18))}</div>` : ''}${pet.sick ? '<i class="ico">🤒</i>' : ''}${dogOf(pet, 'basic')}<div class="nm">${m.me ? '⭐ ' : ''}${esc(pet.name)}</div></div>`;
+    return `<div class="rdog ${pick === m.id ? 'sel' : ''} ${m.me ? 'me' : ''}" style="left:${x}%;bottom:${y}%;width:${w}%;--d:${(i * 0.7) % 3}s" data-act="pick" data-p='${JSON.stringify(m.id)}'>${last ? `<div class="say">${esc(last.text.slice(0, 18))}</div>` : ''}${pet.sick ? '<i class="ico">🤒</i>' : ''}${dogOf(pet, 'basic')}<div class="nm">${m.me ? '⭐ ' : ''}${esc(lbl)}</div></div>`;
   }).join('');
   const sel = mem.find(m => m.id === pick && !m.me), pr = k => `data-p='{"code":"${r.code}","target":"${sel.id}"}'`;
-  const bar = sel ? `<div class="actbar"><b>${esc(sel.pet.name)}</b><button data-act="walk" ${pr()}>🦮 산책</button>${snacks.length ? `<button data-act="gift" ${pr()}>🎁 선물</button>` : ''}${sel.pet.sick ? `<button data-act="sendMedicine" ${pr()}>💊 약</button>` : ''}</div>` : '<p class="muted">친구 강아지를 눌러 보세요</p>';
+  const bar = sel ? `<div class="actbar"><b>${esc(labels[sel.id] || sel.pet.name)}</b><button data-act="walk" ${pr()}>🦮 산책</button>${snacks.length ? `<button data-act="gift" ${pr()}>🎁 선물</button>` : ''}${sel.pet.sick ? `<button data-act="sendMedicine" ${pr()}>💊 약</button>` : ''}</div>` : '<p class="muted">친구 강아지를 눌러 보세요</p>';
   return `<div class="rroom" style="background-image:url('${svgUrl(Art.bgSVG('showroom'))}')">${dogs}</div>${bar}`;
 }
 function viewRoom() {
   const cfg = DATA.cfg, inviteText = '말랑 친구방 펫 같이 키워요!';
   if (!V.rooms.length) return `<p class="muted">친구방은 ${cfg.roomMin}~${cfg.roomMax}명이 모여요. 친구가 없어도 혼자 펫을 키울 수 있어요.</p>
     <h3>방 만들기</h3><div class="cook"><input id="roomName" maxlength="12" placeholder="방 이름"><button data-act="createRoom">만들기</button></div>
-    <h3>방 코드로 들어가기</h3><div class="cook"><input id="roomCode" maxlength="8" placeholder="방 코드"><button data-act="joinRoom">들어가기</button></div>`;
+    <h3>방 코드로 들어가기</h3><div class="cook"><input id="roomCode" maxlength="8" placeholder="방 코드"><button data-act="joinRoom">들어가기</button></div>${renameHTML()}`;
   const r = V.rooms.find(x => x.code === curRoom) || V.rooms[0]; curRoom = r.code;
   const me = V.player.id, q = r.photoReq, snacks = Object.entries(V.inventory.snacks).filter(([, n]) => n > 0);
   const d = V.daily;
@@ -310,6 +325,7 @@ function viewRoom() {
   <p class="muted">링크는 시작 화면까지만 연결돼요. 방 코드는 따로 알려주세요.</p>
   <div class="row"><span>방 코드 <b class="code">${r.code}</b></span><button data-act="copyCode" data-p='"${r.code}"'>복사</button></div>
   <button data-act="shareInvite" data-p='"${r.code}"'>📤 초대 링크 공유</button>
+  ${renameHTML()}
   <details class="recover"><summary>🔑 내 정보 · 복구 코드</summary><p class="muted">다른 기기에서 이어 하려면 이 코드가 필요해요. 남에게 알려주지 마세요.</p><div class="row"><b class="code">${esc(V.player.recovery)}</b><button data-act="copyCode" data-p='${JSON.stringify(V.player.recovery)}'>복사</button></div></details>
   ${Backend.mode !== 'local' ? '' : `<details class="dev" ${devOpen ? 'open' : ''}><summary>🛠 개발용 (테스트 전용)</summary>
     <p class="muted">서버 연결 전이라 다른 사람이 없어요. 아래로 테스트 친구를 만들어 기능을 확인해요.</p>
@@ -354,6 +370,7 @@ document.addEventListener('click', async e => {
     case 'recover': { if (busy) return; busy = true;
       try { const r = await Backend.recover(val('#recCode')); if (!r.ok) toast(r.msg, true); } finally { busy = false; }
       return render(); }
+    case 'rename': return act('rename', { nickname: val('#rnNick'), petName: val('#rnPet') });
     case 'sfx': Sfx.toggle(); return render();
     case 'pick': pick = pick === p ? null : p; return render();
     case 'petDog': Sfx.play('pet'); return petFx(el, e);

@@ -125,3 +125,4 @@ button.small{padding:6px 10px;font-size:12px;margin-top:6px}
 .duostage{position:relative;height:min(46vh,380px);min-height:300px;border-radius:24px;overflow:hidden;background-size:cover;background-position:center bottom;margin:8px 0;touch-action:none}
 .dd{position:absolute;width:42%;transform:translate(-50%,-50%);text-align:center;cursor:grab;user-select:none;touch-action:none}
 .dd svg{width:100%;display:block;pointer-events:none}.dd small{background:#fffd;border-radius:99px;padding:1px 8px;font-weight:700;font-size:11px}
+.recover{margin-top:14px}
