@@ -5,7 +5,6 @@ let S = null, V = null, tab = 'pet', pose = 'basic', poseTimer = null, curRoom =
 let devOpen = false;
 const devReset = { armed: false };
 let photo = { bg: 'showroom', pose: 'basic', url: null, title: '' };
-const COLORS = { cream: '크림', choco: '초코', apricot: '살구' };
 
 const Sfx = {
   ctx: null, on: (() => { try { return localStorage.getItem('malang_sfx') !== '0'; } catch (e) { return true; } })(),
@@ -67,13 +66,13 @@ async function autoJoin() { // 초대 링크로 들어왔으면 시작 직후 �
 function renderStart() {
   const join = joinCode();
   $('#app').innerHTML = `<div class="start">
-    <div class="logo">${Art.dog({ color: 'cream', pose: 'playing' })}</div>
+    <div class="logo">${Art.dog({ color: 'maltese', pose: 'playing' })}</div>
     <h1>말랑 친구방 펫</h1><p class="sub">내 강아지를 키우고, 꾸미고, 친구에게 자랑해요</p>
     ${join ? `<p class="note">친구가 초대했어요! 시작하면 친구방에 바로 들어가요.</p>` : ''}
     <label>내 닉네임<input id="nick" maxlength="8" placeholder="예: 채이"></label>
     <label>강아지 이름<input id="pname" maxlength="8" placeholder="예: 몽이"></label>
     <div class="age"><span>나이 구분</span><label><input type="radio" name="age" value="kid">만 14세 미만</label><label><input type="radio" name="age" value="teen">만 14세 이상</label></div>
-    <div class="colors">${DATA.colors.map((c, i) => `<label class="cpick"><input type="radio" name="color" value="${c.id}" ${i ? '' : 'checked'}><span>${Art.dog({ color: c.id })}</span>${c.name}</label>`).join('')}</div>
+    <div class="colors">${DATA.breeds.map((c, i) => `<label class="cpick"><input type="radio" name="color" value="${c.id}" ${i ? '' : 'checked'}><span>${Art.dog({ color: c.id })}</span>${c.name}</label>`).join('')}</div>
     <button class="big" data-act="start">시작하기</button>
     ${Backend.mode === 'remote' ? `<details class="recover"><summary>다른 기기에서 하던 게임 불러오기</summary><div class="cook"><input id="recCode" maxlength="14" placeholder="복구 코드"><button data-act="recover">불러오기</button></div></details>` : '<p class="muted">서버에 연결되기 전이라 이 기기에서만 연습할 수 있어요</p>'}</div>`;
 }
@@ -219,13 +218,13 @@ const loadImg = src => new Promise((res, rej) => { const i = new Image(); i.onlo
 const svgUrl = svg => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
 async function compose(list, bg, title, ps) {
   const W = 720, Hh = 960, cv = document.createElement('canvas'); cv.width = W; cv.height = Hh;
-  const g = cv.getContext('2d'); g.drawImage(await loadImg(svgUrl(Art.bgSVG(bg, W, Hh))), 0, 0, W, Hh);
+  await Art.ready(); const g = cv.getContext('2d'); g.drawImage(await loadImg(svgUrl(Art.bgSVG(bg, W, Hh))), 0, 0, W, Hh);
   const n = list.length, cols = n <= 2 ? n : n <= 6 ? 3 : 4, rows = Math.ceil(n / cols);
   const cw = W / cols, ch = Math.min(cw, 620 / rows), top = 150 + (620 - ch * rows) / 2;
   for (let i = 0; i < n; i++) {
     const p = list[i], x = (i % cols) * cw + (cols * cw - W) / 2 + (W - cols * cw) / 2, y = top + Math.floor(i / cols) * ch;
     const sz = Math.min(cw, ch - 36) * 0.95;
-    g.drawImage(await loadImg(svgUrl(Art.dog({ color: p.color, equipped: p.equipped, sick: false, pose: n === 1 ? ps : 'basic' }))), x + (cw - sz) / 2, y + (ch - 36 - sz) / 2, sz, sz);
+    g.drawImage(await loadImg(svgUrl(Art.dog({ color: p.color, equipped: p.equipped, sick: false, pose: n === 1 ? ps : 'basic', still: true, inline: true }))), x + (cw - sz) / 2, y + (ch - 36 - sz) / 2, sz, sz);
     g.fillStyle = '#6b4a3a'; g.font = 'bold 26px sans-serif'; g.textAlign = 'center'; g.fillText(p.name, x + cw / 2, y + ch - 8);
   }
   g.fillStyle = '#6b4a3a'; g.font = 'bold 44px sans-serif'; g.textAlign = 'center'; g.fillText(title, W / 2, 90);
@@ -234,11 +233,11 @@ async function compose(list, bg, title, ps) {
 }
 async function composeDuo(items, bg, title) {
   const W = 720, Hh = 960, cv = document.createElement('canvas'); cv.width = W; cv.height = Hh;
-  const g = cv.getContext('2d'); g.drawImage(await loadImg(svgUrl(Art.bgSVG(bg, W, Hh))), 0, 0, W, Hh);
+  await Art.ready(); const g = cv.getContext('2d'); g.drawImage(await loadImg(svgUrl(Art.bgSVG(bg, W, Hh))), 0, 0, W, Hh);
   const sz = 330;
   for (const it of items.slice().sort((p, q) => p.y - q.y)) {
     const cx = it.x / 100 * W, cy = it.y / 100 * Hh;
-    g.drawImage(await loadImg(svgUrl(Art.dog({ color: it.pet.color, equipped: it.pet.equipped, sick: false, pose: it.pose }))), cx - sz / 2, cy - sz / 2, sz, sz);
+    g.drawImage(await loadImg(svgUrl(Art.dog({ color: it.pet.color, equipped: it.pet.equipped, sick: false, pose: it.pose, still: true, inline: true }))), cx - sz / 2, cy - sz / 2, sz, sz);
     g.fillStyle = '#6b4a3a'; g.font = 'bold 26px sans-serif'; g.textAlign = 'center'; g.fillText(it.pet.name, cx, cy + sz / 2 + 4);
   }
   g.fillStyle = '#6b4a3a'; g.font = 'bold 44px sans-serif'; g.textAlign = 'center'; g.fillText(title, W / 2, 90);

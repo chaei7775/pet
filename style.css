@@ -44,7 +44,7 @@ details.dev{margin-top:20px;background:#f4f0ff;border-radius:14px;padding:10px}
 .inl{display:flex;align-items:center;gap:8px;font-size:13px}
 .start{padding:24px 20px;text-align:center}.start .logo svg{width:50%}.start h1{margin:4px 0}.start .sub{margin:0 0 14px;opacity:.7}
 .start label{display:block;text-align:left;margin:10px 0;font-size:13px}.start label input{display:block;width:100%;margin-top:4px}
-.colors{display:flex;gap:8px;margin:12px 0}.cpick{flex:1;text-align:center!important;background:#fff;border:2px solid var(--line);border-radius:14px;padding:6px!important;margin:0!important}
+.colors{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}.cpick{flex:1;text-align:center!important;background:#fff;border:2px solid var(--line);border-radius:14px;padding:6px!important;margin:0!important}
 .cpick input{display:none}.cpick:has(input:checked){border-color:var(--pink);background:var(--pink2)}.cpick svg{width:100%}
 .note{background:#fff3a8;border-radius:12px;padding:8px}
 .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%) translateY(20px);background:#6b4a3a;color:#fff;padding:10px 16px;border-radius:99px;opacity:0;transition:.25s;pointer-events:none;z-index:30;max-width:90%;text-align:center;font-size:14px}
@@ -126,3 +126,7 @@ button.small{padding:6px 10px;font-size:12px;margin-top:6px}
 .dd{position:absolute;width:42%;transform:translate(-50%,-50%);text-align:center;cursor:grab;user-select:none;touch-action:none}
 .dd svg{width:100%;display:block;pointer-events:none}.dd small{background:#fffd;border-radius:99px;padding:1px 8px;font-weight:700;font-size:11px}
 .recover{margin-top:14px}
+/* 진짜 강아지 그림: 놀기 프레임 번갈아 보이기 */
+.pf{opacity:0}.pa{animation-timing-function:steps(1,end);animation-iteration-count:infinite;animation-fill-mode:none}
+@keyframes pf6{0%{opacity:1}16.66%,100%{opacity:0}}
+@keyframes pf5{0%{opacity:1}20%,100%{opacity:0}}

@@ -49,8 +49,9 @@ const DATA = {
     { id: 'scarf', name: '목도리', slot: 'neck', price: 200 },
     { id: 'bell', name: '방울 목걸이', slot: 'neck', price: 150 }
   ],
-  colors: [
-    { id: 'cream', name: '크림' }, { id: 'choco', name: '초코' }, { id: 'apricot', name: '살구' }
+  breeds: [ // 견종 (펫의 color 칸에 이 id가 들어가. 예전 색 이름 cream/choco/apricot은 그림 쪽에서 알아서 바꿔 읽어)
+    { id: 'maltese', name: '말티즈' }, { id: 'bichon', name: '비숑' },
+    { id: 'pomeranian', name: '포메라니안' }, { id: 'poodle', name: '푸들' }
   ],
   backgrounds: [
     { id: 'showroom', name: '쇼룸' }, { id: 'meadow', name: '꽃밭' },
@@ -346,7 +347,7 @@ const Game = (() => {
       if (r.members.length >= C.roomMax) return fail('방이 가득 찼어');
       const names = ['보리', '콩이', '밤톨', '모찌', '두부', '라떼', '구름', '솜이', '탄이'];
       const n = names[r.members.length % names.length], id = 'demo_' + rid();
-      const f = newState(now, n + ' 주인', n, DATA.colors[r.members.length % 3].id, 'teen', id); f.demo = true;
+      const f = newState(now, n + ' 주인', n, DATA.breeds[r.members.length % DATA.breeds.length].id, 'teen', id); f.demo = true;
       f.pet.base.mood = 60; w.players[id] = f; r.members.push({ id, nick: f.player.nickname });
       return done(s, `테스트 친구 ${n} 추가`);
     },

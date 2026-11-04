@@ -1,12 +1,29 @@
-/* 임시 그림 (PLACEHOLDER)
- * GPT로 뽑은 진짜 그림이 나오면 이 파일의 함수만 이미지(<img>)를 돌려주도록 바꾸면 돼.
- * 지금은 코드로 그린 간단한 말랑 강아지야. */
+/* 그림 모음
+ * - 강아지: GPT(코덱스)로 뽑은 진짜 그림 (assets/dogs/*.webp). 견종 4종, 모두 같은 캔버스·같은 눈 위치.
+ * - 옷·배경·밥그릇/공/목줄/얼음주머니: 아직 임시 코드 그림(PLACEHOLDER). 진짜 그림이 오면 이 파일만 바꾸면 돼. */
 const Art = (() => {
-  const PAL = {
-    cream: { body: '#F8E6C8', ear: '#E5C28F', muzzle: '#FFF6E6' },
-    choco: { body: '#A57855', ear: '#6F4A33', muzzle: '#D9B995' },
-    apricot: { body: '#F4BC85', ear: '#DA915A', muzzle: '#FFE2C2' }
+  /* 견종 표: n = 놀기 프레임 수, sick = 아픈 그림이 있는지,
+   * dy = 옷이 앉는 높이 보정(머리/목/몸), ice = 아픈 그림이 없는 견종의 얼음주머니 자리 */
+  const BREEDS = {
+    maltese:    { n: 6, sick: true, dy: { head: -10, neck: 0, body: 0 } },
+    bichon:     { n: 6, dy: { head: -10, neck: 0, body: 0 }, ice: [97.75, 34] },
+    pomeranian: { n: 6, dy: { head: -10, neck: 2, body: 4 }, ice: [97.75, 43] },
+    poodle:     { n: 5, dy: { head: -22, neck: 0, body: 2, hs: 0.72 }, ice: [97.75, 17] }
   };
+  const LEGACY = { cream: 'maltese', choco: 'poodle', apricot: 'pomeranian' }; // 예전 색 이름으로 저장된 펫 호환
+  const breedOf = id => BREEDS[id] ? id : (LEGACY[id] || 'maltese');
+  const PLAY_MS = 180;                                 // 놀기 그림 한 장이 보이는 시간
+  const url = (b, k) => `assets/dogs/${b}_${k}.webp`;
+  const cache = {};                                    // 캔버스(사진 저장)용: 주소 → data URI
+  async function ready() {
+    const urls = []; for (const b in BREEDS) { for (let i = 1; i <= BREEDS[b].n; i++) urls.push(url(b, i)); }
+    urls.push(url('maltese', 'sick'));
+    await Promise.all(urls.filter(u => !cache[u]).map(async u => {
+      try { const blob = await (await fetch(u)).blob();
+        cache[u] = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(blob); });
+      } catch (e) {}
+    }));
+  }
   const OL = '#7a5a44';
   const st = `stroke="${OL}" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"`;
 
@@ -21,43 +38,33 @@ const Art = (() => {
     bell: () => `<g ${st}><path d="M66 136 Q100 154 134 136" fill="none" stroke="#c9553d"/><circle cx="100" cy="150" r="8" fill="#ffd54a"/></g>`
   };
 
-  function dog({ color = 'cream', pose = 'basic', equipped = {}, sick = false } = {}) {
-    const P = PAL[color] || PAL.cream;
+  /* 강아지 SVG 문자열 (viewBox 200x200).
+   * color: 견종 이름(maltese/bichon/pomeranian/poodle) — 예전 색 이름(cream 등)도 받아줘.
+   * pose: basic | eating | playing | sick | walking
+   * still: true면 움직이는 그림 대신 한 장만 (사진·캔버스용)   inline: true면 이미지를 data URI로 넣음 (캔버스용) */
+  function dog({ color = 'maltese', pose = 'basic', equipped = {}, sick = false, still = false, inline = false } = {}) {
+    const b = breedOf(color), B = BREEDS[b];
     if (sick) pose = 'sick';
-    let eyes, mouth = `<path d="M92 112 Q100 120 108 112" fill="none" ${st}/>`, extra = '';
-    if (pose === 'eating') {
-      eyes = `<path d="M74 92 Q82 84 90 92 M110 92 Q118 84 126 92" fill="none" ${st}/>`;
-      mouth = `<ellipse cx="100" cy="114" rx="7" ry="5" fill="#d86a6a" ${st}/>`;
-      extra = `<ellipse cx="100" cy="186" rx="30" ry="9" fill="#d9c3a5" ${st}/>`;
-    } else if (pose === 'playing') {
-      eyes = `<path d="M74 94 Q82 84 90 94 M110 94 Q118 84 126 94" fill="none" ${st}/>`;
-      mouth = `<path d="M90 110 Q100 126 110 110 Z" fill="#d86a6a" ${st}/>`;
-      extra = `<circle cx="164" cy="170" r="14" fill="#7fc4e8" ${st}/>`;
-    } else if (pose === 'sick') {
-      eyes = `<path d="M74 90 L90 96 M74 98 L90 96 M126 90 L110 96 M126 98 L110 96" fill="none" ${st}/>`;
-      mouth = `<path d="M92 116 Q100 108 108 116" fill="none" ${st}/>`;
-      extra = `<path d="M142 66 q6 10 0 16 q-6 -6 0 -16z" fill="#8fd3f4"/><rect x="40" y="70" width="26" height="9" rx="4" fill="#fff" ${st} transform="rotate(-25 53 74)"/>`;
-    } else if (pose === 'walking') {
-      eyes = `<circle cx="82" cy="92" r="5.5" fill="${OL}"/><circle cx="118" cy="92" r="5.5" fill="${OL}"/>`;
-      extra = `<path d="M158 150 q24 -6 30 -36" fill="none" stroke="#e86a6a" stroke-width="4" stroke-linecap="round"/>`;
+    const src = u => (inline && cache[u]) || u;
+    const img = (u, extra = '') => `<image href="${src(u)}" x="0" y="0" width="200" height="200" ${extra}/>`;
+    let art, extra = '';
+    if (pose === 'playing' && !still) {                // 놀기: 프레임을 번갈아 보여줌(CSS 애니메이션)
+      art = Array.from({ length: B.n }, (_, i) => img(url(b, i + 1), `class="pf pa" style="animation-name:pf${B.n};animation-duration:${B.n * PLAY_MS}ms;animation-delay:${i * PLAY_MS}ms"`)).join('');
+    } else if (pose === 'sick' && B.sick) {
+      art = img(url(b, 'sick'));
     } else {
-      eyes = `<circle cx="82" cy="92" r="6" fill="${OL}"/><circle cx="118" cy="92" r="6" fill="${OL}"/><circle cx="84" cy="90" r="2" fill="#fff"/><circle cx="120" cy="90" r="2" fill="#fff"/>`;
+      const k = pose === 'eating' ? 2 : pose === 'playing' ? 3 : 1;   // 먹기=눈 감은 얼굴, 놀기(정지)=손 흔들기
+      art = img(url(b, k));
     }
+    if (pose === 'eating') extra = `<ellipse cx="100" cy="188" rx="30" ry="9" fill="#d9c3a5" ${st}/>`;
+    else if (pose === 'playing') extra = `<circle cx="164" cy="170" r="14" fill="#7fc4e8" ${st}/>`;
+    else if (pose === 'walking') extra = `<path d="M158 150 q24 -6 30 -36" fill="none" stroke="#e86a6a" stroke-width="4" stroke-linecap="round"/>`;
+    else if (pose === 'sick' && !B.sick) { const [ix, iy] = B.ice;   // 아픈 그림이 아직 없는 견종: 기본 그림 + 임시 얼음주머니
+      extra = `<g ${st}><circle cx="${ix}" cy="${iy}" r="8.5" fill="#bfe3ff"/></g><g stroke="#fff" stroke-width="1.8" stroke-linecap="round"><path d="M${ix} ${iy - 5}V${iy + 5}M${ix - 4.3} ${iy - 2.5}L${ix + 4.3} ${iy + 2.5}M${ix - 4.3} ${iy + 2.5}L${ix + 4.3} ${iy - 2.5}"/></g>`; }
+    const dy = B.dy, hs = dy.hs || 1;   // 머리 옷은 모자 밑면(y 62)을 기준으로 크기를 줄여서(푸들) 정수리 뭉치 위에 얹음
+    const put = (slot) => equipped[slot] ? `<g transform="translate(-2.25 ${dy[slot]})${slot === 'head' && hs !== 1 ? ` translate(100 62) scale(${hs}) translate(-100 -62)` : ''}">${clothes[equipped[slot]]()}</g>` : '';
     const sway = pose === 'playing' ? 'class="bounce"' : '';
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><g ${sway}>
-      <circle cx="152" cy="136" r="13" fill="${P.body}" ${st}/>
-      <ellipse cx="100" cy="148" rx="52" ry="38" fill="${P.body}" ${st}/>
-      <ellipse cx="74" cy="182" rx="14" ry="9" fill="${P.muzzle}" ${st}/><ellipse cx="126" cy="182" rx="14" ry="9" fill="${P.muzzle}" ${st}/>
-      ${equipped.body ? clothes[equipped.body]() : ''}
-      <ellipse cx="54" cy="84" rx="16" ry="26" fill="${P.ear}" ${st} transform="rotate(14 54 84)"/>
-      <ellipse cx="146" cy="84" rx="16" ry="26" fill="${P.ear}" ${st} transform="rotate(-14 146 84)"/>
-      <circle cx="100" cy="92" r="50" fill="${P.body}" ${st}/>
-      <ellipse cx="100" cy="110" rx="22" ry="16" fill="${P.muzzle}"/>
-      <ellipse cx="100" cy="102" rx="7" ry="5" fill="${OL}"/>
-      ${eyes}${mouth}
-      <circle cx="66" cy="106" r="7" fill="#ffb3c1" opacity=".7"/><circle cx="134" cy="106" r="7" fill="#ffb3c1" opacity=".7"/>
-      ${equipped.neck ? clothes[equipped.neck]() : ''}${equipped.head ? clothes[equipped.head]() : ''}
-      ${extra}</g></svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><g ${sway}>${art}${put('body')}${put('neck')}${put('head')}${extra}</g></svg>`;
   }
 
   const BG = {
@@ -79,5 +86,5 @@ const Art = (() => {
     const c = DATA.clothes.find(x => x.id === id);
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${VB[c.slot]}" class="cicon">${clothes[id]()}</svg>`;
   }
-  return { dog, bgSVG, clothIcon };
+  return { dog, bgSVG, clothIcon, ready, breedOf, BREEDS };
 })();
