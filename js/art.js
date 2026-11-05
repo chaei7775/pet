@@ -7,7 +7,7 @@ const Art = (() => {
   const BREEDS = {
     maltese:    { n: 6, sick: true, walk: 4, dy: { head: -10, neck: 0, body: 0 } },
     bichon:     { n: 6, walk: 4, dy: { head: -10, neck: 0, body: 0 }, ice: [97.75, 34] },
-    pomeranian: { n: 6, dy: { head: -10, neck: 2, body: 4 }, ice: [97.75, 43] },
+    pomeranian: { n: 6, walk: 4, dy: { head: -10, neck: 2, body: 4 }, ice: [97.75, 43] },
     poodle:     { n: 5, dy: { head: -22, neck: 0, body: 2, hs: 0.72 }, ice: [97.75, 17] }
   };
   const LEGACY = { cream: 'maltese', choco: 'poodle', apricot: 'pomeranian' }; // 예전 색 이름으로 저장된 펫 호환
@@ -51,7 +51,7 @@ const Art = (() => {
     let art, extra = '';
     if (pose === 'playing' && !still) {                // 놀기: 프레임을 번갈아 보여줌(CSS 애니메이션)
       art = Array.from({ length: B.n }, (_, i) => img(url(b, i + 1), `class="pf pa" style="animation-name:pf${B.n};animation-duration:${B.n * PLAY_MS}ms;animation-delay:${i * PLAY_MS}ms"`)).join('');
-    } else if (pose === 'walking' && B.walk) {          // 걷기: 서서 총총 걷는 그림 (말티즈·비숑 연결됨)
+    } else if (pose === 'walking' && B.walk) {          // 걷기: 서서 총총 걷는 그림 (말티즈·비숑·포메 연결됨)
       art = still ? img(url(b, 'walk_1')) : Array.from({ length: B.walk }, (_, i) => img(url(b, 'walk_' + (i + 1)), `class="pf pa" style="animation-name:pf${B.walk};animation-duration:${B.walk * WALK_MS}ms;animation-delay:${i * WALK_MS}ms"`)).join('');
     } else if (pose === 'sick' && B.sick) {
       art = img(url(b, 'sick'));
