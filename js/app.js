@@ -3,6 +3,7 @@ const $ = s => document.querySelector(s);
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 let S = null, V = null, tab = 'pet', pose = 'basic', poseTimer = null, curRoom = null, care = null; // care: 목욕·양치 하는 중 {kind, p(진행 0~100), foam[]}
 let devOpen = false;
+let closeup = false;   // 내 펫 탭: false=집 안(돌아다니는 화면), true=강아지를 크게 보는 돌봄 장면
 const devReset = { armed: false };
 let photo = { bg: 'showroom', pose: 'basic', url: null, title: '' };
 
@@ -82,7 +83,7 @@ function render() {
   refresh();
   if (!V) return renderStart();
   const tabs = [['pet', '🐶', '내 펫'], ['kitchen', '🍪', '부엌·알바'], ['closet', '👗', '꾸미기'], ['photo', '📸', '사진'], ['room', '🏠', '친구방']];
-  const views = { pet: viewPet, kitchen: viewKitchen, closet: viewCloset, photo: viewPhoto, room: viewRoom };
+  const views = { pet: () => closeup ? viewPet() : viewHouse(), kitchen: viewKitchen, closet: viewCloset, photo: viewPhoto, room: viewRoom };
   $('#app').innerHTML = `<header><b>${esc(V.pet.name)}</b><span class="chips"><button class="snd" data-act="sfx">${Sfx.on ? '🔊' : '🔇'}</button><em>🪙 ${V.coins}</em><em>❤ ${V.hearts}</em></span></header>
     <main>${views[tab]()}</main>
     <nav>${tabs.map(t => `<button class="${tab === t[0] ? 'on' : ''}" data-act="tab" data-p='"${t[0]}"'><span>${t[1]}</span>${t[2]}</button>`).join('')}</nav>`;
@@ -105,7 +106,7 @@ function viewPet() {
     ...snacks.slice(0, 3).map(([k, n]) => tool('🍪', `${esc(Game.snackName(k).replace(' 간식', ''))} ×${n}`, { act: 'giveSnack', p: { key: k }, pose: 'eating' })),
     ...(st.sick ? [tool('💊', `약 −${cfg.medMineCost}🪙`, { act: 'medicine' }), tool('🏥', `병원 −${cfg.hospitalCost}🪙`, { act: 'hospital' })] : [])].join('');
   const ck = (ok, t) => `<span class="${ok ? 'ok' : ''}">${ok ? '✔' : '○'} ${t}</span>`;
-  return `${d.loginClaimed ? '' : `<button class="gift" data-act="claimLogin">🎁 오늘의 접속 선물 받기 (+${cfg.loginGift}🪙)</button>`}
+  return `<button class="small back" data-act="toHouse">← 집으로</button>${d.loginClaimed ? '' : `<button class="gift" data-act="claimLogin">🎁 오늘의 접속 선물 받기 (+${cfg.loginGift}🪙)</button>`}
   <div class="room" style="background-image:url('${svgUrl(Art.bgSVG('showroom'))}')">
     <div class="hud">${g('🍗', st.hunger, 'hg')}${g('🧻', st.toilet, 'tl')}${g('💗', st.mood, 'md')}</div>
     <div class="pad ${poop ? 'dirty' : ''}" data-act="clean"><div class="padmat"></div><div class="poops">${'💩'.repeat(poop)}</div><small>${poop ? '눌러서 치우기' : '배변판'}</small></div>
@@ -148,6 +149,83 @@ async function finishScrub() {
   if (care.kind === 'bath') { Sfx.play('ok'); return render(); }       // 거품 다 냈으면 헹구기 버튼이 나옴
   care.busy = true; await act('brush', {}, 'playing'); care = null; render();
 }
+
+/* ───────── 집 안 (쿼터뷰, 강아지가 돌아다니고 어지른 걸 치움) ───────── */
+// 바닥은 2:1 마름모. 바닥 좌표 (u,v)는 0~1, 360x414 그림판 위의 화면 좌표로 바꿔서 써. [배경·가구는 임시 코드 그림 — 진짜 그림이 오면 이 부분만 바꿔]
+const HW = 360, HH = 414, FW = 338.4, FH = 169.2, FTOP = 230.4;
+const fx = (u, v) => HW / 2 + (u - v) * FW / 2, fy = (u, v) => FTOP + (u + v) * FH / 2;
+const MESS = { plate: ['🍽️', '접시'], tissue: ['🧻', '휴지'], toys: ['🧸', '장난감'], water: ['💧', '물']};
+const hd = { u: .5, v: .55, tu: .5, tv: .55, face: 1, walking: false, wait: 1.2, t: 0 };
+function houseBG() {
+  const L = [HW / 2 - FW / 2, FTOP + FH / 2], T = [HW / 2, FTOP], R = [HW / 2 + FW / 2, FTOP + FH / 2], B = [HW / 2, FTOP + FH], WH = 190, P = a => a.join(',');
+  let grid = ''; for (let i = 1; i < 6; i++) { const t = i / 6;
+    grid += `<path d="M${fx(t, 0)} ${fy(t, 0)}L${fx(t, 1)} ${fy(t, 1)}M${fx(0, t)} ${fy(0, t)}L${fx(1, t)} ${fy(1, t)}" stroke="#e8c7a3" stroke-width="1.5" fill="none"/>`; }
+  const rug = [[.3, .3], [.7, .3], [.7, .7], [.3, .7]].map(([u, v]) => P([fx(u, v), fy(u, v)])).join(' ');
+  return `<svg class="hbg" viewBox="0 0 ${HW} ${HH}" xmlns="http://www.w3.org/2000/svg"><rect width="${HW}" height="${HH}" fill="#ffeef4"/>
+    <polygon points="${P(L)} ${P(T)} ${P([T[0], T[1] - WH])} ${P([L[0], L[1] - WH])}" fill="#ffe1ec"/>
+    <polygon points="${P(T)} ${P(R)} ${P([R[0], R[1] - WH])} ${P([T[0], T[1] - WH])}" fill="#ffd3e4"/>
+    <path d="M${P(L)}L${P(T)}L${P(R)}" fill="none" stroke="#d9a5ad" stroke-width="5" stroke-linejoin="round"/>
+    <polygon points="${P(L)} ${P(T)} ${P(R)} ${P(B)}" fill="#f8dfc4" stroke="#d9b08c" stroke-width="4" stroke-linejoin="round"/>${grid}
+    <polygon points="${rug}" fill="#ffc2d4" stroke="#e79ab3" stroke-width="3" stroke-linejoin="round"/>
+    <rect x="212" y="70" width="70" height="62" rx="10" fill="#d6ecff" stroke="#b98a78" stroke-width="5" transform="skewY(27)" transform-origin="212 70"/></svg>`;
+}
+function houseHTML() {
+  const now = Backend.now(), st = Game.stats(V.pet, now), pet = V.pet, cs = Game.careStatus(pet, now), cfg = DATA.cfg;
+  const g = (ic, v, cls) => `<div class="gauge"><span>${ic}</span><div class="track"><i class="${cls}" style="width:${Math.round(v)}%"></i></div><b>${Math.round(v)}</b></div>`;
+  const bubbles = [st.sick ? '🤒' : '', st.hunger < 50 ? '🍗' : '', st.toilet >= 50 ? '💩' : '', st.mood < 50 ? '🥺' : '', cs.bath.due ? '🫧' : '', cs.brush.due ? '🦷' : ''].filter(Boolean).slice(0, 3);
+  const poop = st.toilet >= 75 ? 3 : st.toilet >= 50 ? 2 : st.toilet >= 25 ? 1 : 0;
+  const pu = .84, pv = .16;
+  const messes = (pet.messes || []).map(m => `<div class="hmess" data-mid="${esc(m.id)}" style="left:${fx(m.x, m.y) / HW * 100}%;top:${fy(m.x, m.y) / HH * 100}%;z-index:${Math.round((m.x + m.y) * 100)}"><span>${MESS[m.kind] ? MESS[m.kind][0] : '❔'}</span><i>!</i></div>`).join('');
+  return `<div class="house" id="house">${houseBG()}
+    <div class="hud">${g('🍗', st.hunger, 'hg')}${g('🧻', st.toilet, 'tl')}${g('💗', st.mood, 'md')}</div>
+    <div class="hpad ${poop ? 'dirty' : ''}" data-act="clean" style="left:${fx(pu, pv) / HW * 100}%;top:${fy(pu, pv) / HH * 100}%;z-index:${Math.round((pu + pv) * 100)}"><div class="padmat"></div><div class="poops">${'💩'.repeat(poop)}</div></div>
+    ${messes}
+    <div class="hdog" id="hdog" data-act="toCloseup"><div class="hflip">${bubbles.length ? `<div class="bubbles">${bubbles.map(b => `<i>${b}</i>`).join('')}</div>` : ''}<div class="hart">${dogOf(pet, hd.walking && !st.sick ? 'walking' : 'basic')}</div></div></div>
+    <div class="hhint">${(pet.messes || []).length ? '🧹 어지른 곳을 문질러 치워줘' : '강아지를 눌러 돌봐줘'}</div></div>`;
+}
+function viewHouse() {
+  const d = V.daily, cfg = DATA.cfg;
+  return `${d.loginClaimed ? '' : `<button class="gift" data-act="claimLogin">🎁 오늘의 접속 선물 받기 (+${cfg.loginGift}🪙)</button>`}${houseHTML()}`;
+}
+function placeHouseDog(el) {
+  const sc = .82 + .28 * (hd.u + hd.v) / 2, w = 118 * sc, x = fx(hd.u, hd.v), y = fy(hd.u, hd.v);
+  el.style.cssText = `left:${(x - w / 2) / HW * 100}%;top:${(y - w * .875) / HH * 100}%;width:${w / HW * 100}%;z-index:${Math.round((hd.u + hd.v) * 100) + 1}`;
+  const f = el.firstElementChild; if (f) f.style.transform = hd.face < 0 ? 'scaleX(-1)' : '';
+}
+function setHouseArt(el, walking) {
+  const a = el.querySelector('.hart'); if (a && V) a.innerHTML = dogOf(V.pet, walking ? 'walking' : 'basic');
+}
+function houseTick(ts) {
+  requestAnimationFrame(houseTick);
+  const el = $('#hdog'); const dt = Math.min(.1, (ts - (hd.t || ts)) / 1000); hd.t = ts;
+  if (!el || !V || document.hidden || tab !== 'pet' || closeup) return;
+  const sick = Game.stats(V.pet, Backend.now()).sick;
+  if (hd.walking) {
+    const du = hd.tu - hd.u, dv = hd.tv - hd.v, dist = Math.hypot(du, dv), step = .17 * dt;
+    if (du - dv > .004) hd.face = 1; else if (du - dv < -.004) hd.face = -1;
+    if (dist <= step) { hd.u = hd.tu; hd.v = hd.tv; hd.walking = false; hd.wait = 1.5 + Math.random() * 3.5; setHouseArt(el, false); }
+    else { hd.u += du / dist * step; hd.v += dv / dist * step; }
+  } else if (!sick) {
+    hd.wait -= dt;
+    if (hd.wait <= 0) {
+      const a = Math.random() * Math.PI * 2, r = .18 + Math.random() * .3;
+      hd.tu = Math.min(.92, Math.max(.1, hd.u + Math.cos(a) * r)); hd.tv = Math.min(.92, Math.max(.1, hd.v + Math.sin(a) * r));
+      if (Math.hypot(hd.tu - hd.u, hd.tv - hd.v) > .08) { hd.walking = true; setHouseArt(el, true); } else hd.wait = .3;
+    }
+  }
+  placeHouseDog(el);
+}
+requestAnimationFrame(houseTick);
+document.addEventListener('pointerdown', e => {   // 어지른 곳을 손가락으로 문질러 치움
+  const m = e.target.closest('.hmess'); if (!m || busy) return; e.preventDefault();
+  let lx = e.clientX, ly = e.clientY, acc = 0; const need = 80;
+  const mv = ev => { acc += Math.hypot(ev.clientX - lx, ev.clientY - ly); lx = ev.clientX; ly = ev.clientY;
+    m.style.setProperty('--p', Math.min(1, acc / need)); if (acc > 16 && !m.classList.contains('rub')) m.classList.add('rub');
+    if (acc >= need) { up(); Sfx.play('pop'); act('cleanMess', { id: m.dataset.mid }, 'playing'); } };
+  const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', end); };
+  const end = () => { up(); if (acc < 16) toast('쓱쓱 문질러서 치워줘'); else if (acc < need) { m.classList.remove('rub'); m.style.setProperty('--p', 0); } };
+  window.addEventListener('pointermove', mv); window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end);
+});
 function petFx(el, e) {
   const sc = $('.room'); if (!sc) return; const r = sc.getBoundingClientRect();
   ['💗', '✨', '💖'].forEach((h, i) => { const n = document.createElement('i'); n.className = 'fx'; n.textContent = h;
@@ -203,7 +281,7 @@ function viewKitchen() {
     <button class="sign" data-act="startJob">🦴<small>알바 ${V.daily.jobs}/${cfg.jobMaxDaily}</small></button>
     <div class="shelf">${shelf}</div>
     <div id="pot" class="pot ${pot.length ? 'cooking' : ''}"><div class="potin">${pot.map(id => `<i>${DATA.ingredients.find(x => x.id === id).icon}</i>`).join('') || '<small>재료를 끌어다 넣어요</small>'}</div>${potSVG}</div>
-    <div class="tray">${snacks.length ? snacks.map(([k, n]) => `<div class="snack" data-act="tab" data-p='"pet"'><span>🍪</span><small>${esc(Game.snackName(k).replace(' 간식', ''))} ×${n}</small></div>`).join('') : '<small class="muted">만든 간식이 여기에 나와요</small>'}</div>
+    <div class="tray">${snacks.length ? snacks.map(([k, n]) => `<div class="snack" data-act="closeup"><span>🍪</span><small>${esc(Game.snackName(k).replace(' 간식', ''))} ×${n}</small></div>`).join('') : '<small class="muted">만든 간식이 여기에 나와요</small>'}</div>
   </div>
   <p class="muted">재료를 누르면 사고, 냄비로 끌어다 2개 넣으면 간식이 만들어져요. 😍🙂😒는 ${esc(V.pet.name)}의 취향이에요. 간식은 쟁반을 눌러 내 펫 화면에서 줘요.</p>`;
 }
@@ -330,10 +408,10 @@ function roomSceneHTML(r, snacks) {
     const pet = m.me ? { ...V.pet, sick: Game.stats(V.pet, now).sick } : m.pet;
     const lbl = labels[m.id] || pet.name;
     const last = r.chat.slice().reverse().find(c => c.from === m.id && now - c.t < 90000);
-    return `<div class="rdog ${pick === m.id ? 'sel' : ''} ${m.me ? 'me' : ''}" style="left:${x}%;bottom:${y}%;width:${w}%;--d:${(i * 0.7) % 3}s" data-act="pick" data-p='${JSON.stringify(m.id)}'>${last ? `<div class="say">${esc(last.text.slice(0, 18))}</div>` : ''}${pet.sick ? '<i class="ico">🤒</i>' : ''}${dogOf(pet, 'basic')}<div class="nm">${m.me ? '⭐ ' : ''}${esc(lbl)}</div></div>`;
+    return `<div class="rdog ${pick === m.id ? 'sel' : ''} ${m.me ? 'me' : ''}" style="left:${x}%;bottom:${y}%;width:${w}%;--d:${(i * 0.7) % 3}s" data-act="pick" data-p='${JSON.stringify(m.id)}'>${last ? `<div class="say">${esc(last.text.slice(0, 18))}</div>` : ''}${pet.sick ? '<i class="ico">🤒</i>' : ''}${(pet.messes || []).length ? `<i class="ico mess">🧹${pet.messes.length}</i>` : ''}${dogOf(pet, 'basic')}<div class="nm">${m.me ? '⭐ ' : ''}${esc(lbl)}</div></div>`;
   }).join('');
   const sel = mem.find(m => m.id === pick && !m.me), pr = k => `data-p='{"code":"${r.code}","target":"${sel.id}"}'`;
-  const bar = sel ? `<div class="actbar"><b>${esc(labels[sel.id] || sel.pet.name)}</b><button data-act="walk" ${pr()}>🦮 산책</button>${snacks.length ? `<button data-act="gift" ${pr()}>🎁 선물</button>` : ''}${sel.pet.sick ? `<button data-act="sendMedicine" ${pr()}>💊 약</button>` : ''}</div>` : '<p class="muted">친구 강아지를 눌러 보세요</p>';
+  const bar = sel ? `<div class="actbar"><b>${esc(labels[sel.id] || sel.pet.name)}</b><button data-act="walk" ${pr()}>🦮 산책</button>${snacks.length ? `<button data-act="gift" ${pr()}>🎁 선물</button>` : ''}${sel.pet.sick ? `<button data-act="sendMedicine" ${pr()}>💊 약</button>` : ''}${(sel.pet.messes || []).length ? `<button data-act="cleanFriend" data-p='{"code":"${r.code}","target":"${sel.id}","id":"${sel.pet.messes[0].id}"}'>🧹 집 치워주기 (${sel.pet.messes.length})</button>` : ''}</div>` : '<p class="muted">친구 강아지를 눌러 보세요</p>';
   return `<div class="rroom" style="background-image:url('${svgUrl(Art.bgSVG('showroom'))}')">${dogs}</div>${bar}`;
 }
 function viewRoom() {
@@ -346,7 +424,7 @@ function viewRoom() {
   const d = V.daily;
   const members = roomSceneHTML(r, snacks);
   return `<div class="row"><b>${esc(r.name)}</b><span>${r.members.length}/${cfg.roomMax}명</span></div>
-  <p class="muted">대신 산책 ${d.walksGiven}/${cfg.walkGiveMax} · 선물 ${d.gifts}/${cfg.giftMax} · 응원 하트 ${d.hearts}/${cfg.heartMax}</p>
+  <p class="muted">대신 산책 ${d.walksGiven}/${cfg.walkGiveMax} · 대신 치우기 ${d.cleansGiven || 0}/${cfg.cleanGiveMax} · 선물 ${d.gifts}/${cfg.giftMax} · 응원 하트 ${d.hearts}/${cfg.heartMax}</p>
   ${snacks.length ? `<label class="inl">선물할 간식 <select id="giftKey">${snacks.map(([k, n]) => `<option value="${k}">${esc(Game.snackName(k))} ×${n}</option>`).join('')}</select></label>` : ''}
   ${members}
   <h3>방 채팅 ${r.chatOff ? '<small>꺼짐</small>' : ''}</h3>
@@ -409,6 +487,10 @@ document.addEventListener('click', async e => {
     case 'recover': { if (busy) return; busy = true;
       try { const r = await Backend.recover(val('#recCode')); if (!r.ok) toast(r.msg, true); } finally { busy = false; }
       return render(); }
+    case 'toCloseup': closeup = true; Sfx.play('pet'); return render();
+    case 'toHouse': closeup = false; care = null; return render();
+    case 'closeup': tab = 'pet'; closeup = true; return render();
+    case 'cleanFriend': return act('cleanFriendMess', p);
     case 'careCancel': care = null; return render();
     case 'rinse': { if (!care || busy) return; care.rinsing = true; render(); Sfx.play('pop'); await new Promise(r => setTimeout(r, 900));
       await act('bath', {}, 'playing'); care = null; return render(); }
@@ -417,7 +499,7 @@ document.addEventListener('click', async e => {
     case 'pick': pick = pick === p ? null : p; return render();
     case 'petDog': Sfx.play('pet'); return petFx(el, e);
     case 'chatSend': { const r = await act('chat', { ...p, text: val('#chatText') }); const bx = $('#chatBox'); if (bx) bx.scrollTop = bx.scrollHeight; return r; }
-    case 'tab': tab = p; return render();
+    case 'tab': if (p === 'pet' && tab === 'pet') closeup = false; tab = p; return render();
     case 'startJob': return startJob();
     case 'cook': return act('cook', { a: val('#cookA'), b: val('#cookB') });
     case 'createRoom': return act('createRoom', { name: val('#roomName') });

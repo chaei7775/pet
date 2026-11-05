@@ -20,6 +20,10 @@ const DATA = {
     loginGift: 90, careBonus: 30, nameMax: 8, renameMaxDaily: 2, // 이름은 1~8자, 하루 2번까지 바꿀 수 있어 [내가 정함]
     // 목욕·양치: 며칠에 한 번 하는 긴 주기 돌봄. 돌봄 완료(30🪙) 조건에는 안 들어가고, 안 해도 불이익 없음 [내가 정함 — 숫자는 여기서만 바꾸면 돼]
     bathEveryH: 72, bathMood: 15, brushEveryH: 48, brushMood: 10, shineH: 24,
+    // 집 어지르기: 강아지가 4~8시간마다 한 번 어질러, 방에 최대 3개까지. 치우면 기분만 오르고 코인은 없어. 친구가 대신 치우면 코인·하트 [내가 정함]
+    messMinH: 4, messMaxH: 8, messMax: 3, messMood: 3,
+    cleanGiveMax: 3, cleanGiveCoin: 10, cleanGiveHearts: 1,
+    messKinds: ['plate', 'tissue', 'toys', 'water'],   // 접시 깨짐 / 풀린 휴지 / 흩어진 장난감 / 엎은 물
    
     feedHours: 24, feedMax: 50,
     roomPhotoNeed: 3, roomPhotoWindowH: 24, roomMin: 3, roomMax: 10, maxRooms: 5, // maxRooms: [내가 정함] 한 사람이 들어갈 수 있는 방 수
@@ -85,10 +89,12 @@ const Game = (() => {
     return { id: seed, name, color, species: 'dog', taste: makeTaste(seed),
       base: { t: now, hunger: C.hungerStart, toilet: 0, mood: C.moodStart },
       sick: null, lastRollDay: dayKey(now), equipped: { head: null, neck: null, body: null },
-      lastBath: null, lastBrush: null, shineUntil: 0 };
+      lastBath: null, lastBrush: null, shineUntil: 0, messes: [], messSeq: 0, messNext: now + messGap(seed, 0) };
   }
+  // 다음 어지르기까지 걸리는 시간 (펫 아이디와 번호로 정해지는 값이라 서버·브라우저가 똑같이 계산해)
+  function messGap(id, k) { return (C.messMinH + hash(id + ':mi' + k) * (C.messMaxH - C.messMinH)) * H; }
   function newDaily(now) {
-    return { day: dayKey(now), plays: 0, jobs: 0, walksGiven: 0, walksReceived: 0, gifts: 0, hearts: 0,
+    return { day: dayKey(now), plays: 0, jobs: 0, walksGiven: 0, walksReceived: 0, cleansGiven: 0, gifts: 0, hearts: 0,
       loginClaimed: false, renames: 0, careBonusClaimed: false, care: { fed: false, cleaned: false, played: false } };
   }
   function newState(now, nickname, petName, color, ageGroup, id) {
@@ -133,8 +139,25 @@ const Game = (() => {
       }
     }
     pet.lastRollDay = today;
+    spawnMess(pet, now);
     if (s.daily.day !== today) s.daily = newDaily(now);
     return s;
+  }
+  // 시간이 지나서 생긴 어지름을 방에 반영 (방이 꽉 차면 멈추고, 치우면 그때부터 다시 시간이 흘러)
+  function spawnMess(pet, now) {
+    if (!pet.messes) { pet.messes = []; pet.messSeq = 0; pet.messNext = now + messGap(pet.id, 0); }
+    for (let g = 0; g < 30 && pet.messNext <= now && pet.messes.length < C.messMax; g++) {
+      const k = pet.messSeq, id = pet.id;
+      pet.messes.push({ id: 'm' + k, kind: C.messKinds[Math.floor(hash(id + ':mk' + k) * C.messKinds.length)],
+        x: Math.round((0.12 + hash(id + ':mx' + k) * 0.76) * 100) / 100, y: Math.round((0.2 + hash(id + ':my' + k) * 0.66) * 100) / 100, t: pet.messNext });
+      pet.messSeq = k + 1; pet.messNext += messGap(id, k + 1);
+    }
+  }
+  function takeMess(pet, mid, now) { // 어지른 것 하나를 치움. 없으면 null
+    const i = (pet.messes || []).findIndex(m => m.id === mid); if (i < 0) return null;
+    const m = pet.messes.splice(i, 1)[0];
+    if (pet.messNext <= now) pet.messNext = now + messGap(pet.id, pet.messSeq);
+    pet.base.mood = clamp(pet.base.mood + C.messMood, 0, 100); return m;
   }
   function settleRoom(r, now) {
     r.feed = r.feed.filter(f => now - f.t < C.feedHours * H).slice(-C.feedMax);
@@ -182,6 +205,18 @@ const Game = (() => {
     clean(s) {
       if (s.pet.base.toilet <= 0) return fail('배변판은 이미 깨끗해');
       s.pet.base.toilet = 0; s.daily.care.cleaned = true; return done(s, '배변판이 깨끗해졌어' + careCheck(s));
+    },
+    cleanMess(s, p, now) {
+      if (!takeMess(s.pet, String(p.id), now)) return fail('이미 치웠어');
+      return done(s, `치웠어! 기분 +${C.messMood}`);
+    },
+    cleanFriendMess(s, p, now, w) {
+      const r = myRoom(s, w, p.code), t = r && target(s, r, w, p.target); if (!t) return fail('대상을 골라줘');
+      if ((s.daily.cleansGiven || 0) >= C.cleanGiveMax) return fail(`대신 치우기는 하루 ${C.cleanGiveMax}번까지야`);
+      if (!takeMess(t.pet, String(p.id), now)) return fail('이미 누가 치웠어');
+      s.daily.cleansGiven = (s.daily.cleansGiven || 0) + 1; s.coins += C.cleanGiveCoin; s.hearts += C.cleanGiveHearts;
+      addFeed(r, now, `${s.player.nickname}가 ${t.pet.name}네 집을 치워줬어`, s.player.id);
+      return done(s, `${t.pet.name}네 집을 치웠어! +${C.cleanGiveCoin}🪙 ❤${C.cleanGiveHearts}`);
     },
     play(s) {
       if (s.daily.plays >= C.playMax) return fail(`놀아주기는 하루 ${C.playMax}번까지야`);
@@ -408,7 +443,7 @@ const Game = (() => {
       r.members = r.members.map(m => { const P = players[m.id];
         if (!P) return { id: m.id, nick: m.nick, me: m.id === me.player.id, pet: null };
         const st = stats(P.pet, now);
-        return { id: m.id, nick: m.nick, me: m.id === me.player.id, pet: { name: P.pet.name, color: P.pet.color, equipped: P.pet.equipped, sick: st.sick, mood: st.mood, shine: careStatus(P.pet, now).shine } }; });
+        return { id: m.id, nick: m.nick, me: m.id === me.player.id, pet: { name: P.pet.name, color: P.pet.color, equipped: P.pet.equipped, sick: st.sick, mood: st.mood, shine: careStatus(P.pet, now).shine, messes: P.pet.messes || [] } }; });
       return r; });
     return { me, rooms };
   }
